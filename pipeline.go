@@ -63,7 +63,7 @@ func listFolder() pipelineSegment {
 
 			if err != nil {
 				errlog.Print(err)
-				return
+				continue
 			}
 			cursor = output.Cursor
 
@@ -128,7 +128,7 @@ func downloadToFolder(outputFolder string) pipelineSegment {
 			})
 			if err != nil {
 				errlog.Print(err)
-				return
+				continue
 			}
 
 			file, err := os.Create(outputFilename)
