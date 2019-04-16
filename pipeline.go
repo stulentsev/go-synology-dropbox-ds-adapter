@@ -1,10 +1,11 @@
 package main
 
 import (
-	"github.com/tj/go-dropbox"
+	"github.com/stulentsev/go-dropbox"
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 type pipelineSegment interface {
@@ -38,22 +39,55 @@ func startPipeline(segments ...pipelineSegment) chan string {
 
 // starts or continues folder scan
 // TODO: make it multi-user capable
-func listFolder() pipelineSegment {
+func watchFolder(interval uint64) pipelineSegment {
 	appFolder := "/Synology DownloadStation adapter" // TODO: probably need to make this configurable
 	dbx := dropbox.New(dropbox.NewConfig(dropboxToken))
+	longpollDoneCh := make(chan struct{})
+	cursorCh := make(chan string)
 	var cursor string
 
 	return pipelineSegmentFunc(func(in, out chan string) {
+		// long-poller worker
+		go func(cursorCh chan string, done chan struct{}) {
+			infolog.Print("Starting listFolder longpoller")
+			defer infolog.Print("Stopping listFolder longpoller")
+			var localCursor string
+
+			localCursor = <- cursorCh
+
+			for {
+				output, err := dbx.Files.ListFolderLongpoll(&dropbox.ListFolderLongpollInput{
+					Cursor:  localCursor,
+					Timeout: interval,
+				})
+
+				if err != nil {
+					errlog.Print(err)
+					time.Sleep(3 * time.Second)
+					continue
+				}
+				if output.Changes {
+					in <- "some account"
+					localCursor = <- cursorCh
+				} else {
+				}
+				if output.Backoff > 0 {
+					time.Sleep(time.Duration(output.Backoff) * time.Second)
+				}
+			}
+
+		}(cursorCh, longpollDoneCh)
+
 		infolog.Print("Starting listFolder segment")
 		defer infolog.Print("Stopping listFolder segment")
-		for acc := range in {
-			infolog.Printf("listing directory for account %s", acc)
+		for range in {
 			var output *dropbox.ListFolderOutput
 			var err error
 			if len(cursor) == 0 {
 				output, err = dbx.Files.ListFolder(&dropbox.ListFolderInput{
-					Path:           appFolder,
-					IncludeDeleted: false,
+					Path:             appFolder,
+					IncludeDeleted:   false,
+					IncludeMediaInfo: false,
 				})
 			} else {
 				output, err = dbx.Files.ListFolderContinue(&dropbox.ListFolderContinueInput{
@@ -66,12 +100,14 @@ func listFolder() pipelineSegment {
 				continue
 			}
 			cursor = output.Cursor
+			cursorCh <- cursor
 
 			for _, entry := range output.Entries {
 				infolog.Printf("seeing file %s", entry.PathLower)
 				out <- entry.PathLower
 			}
 		}
+		close(longpollDoneCh)
 	})
 }
 
