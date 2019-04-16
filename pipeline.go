@@ -75,8 +75,8 @@ func listFolder() pipelineSegment {
 	})
 }
 
+// a simple map-based filter. If we've already seen this file, don't pass it on.
 func stopSeenEntries() pipelineSegment {
-
 	seenEntries := make(map[string]struct{})
 
 	return pipelineSegmentFunc(func(in, out chan string) {
@@ -93,6 +93,7 @@ func stopSeenEntries() pipelineSegment {
 	})
 }
 
+// checks file extensions against whitelist
 func filterFileTypes(fileTypes ...string) pipelineSegment {
 	return pipelineSegmentFunc(func(in, out chan string) {
 		infolog.Print("Starting filterFileTypes segment")
@@ -110,6 +111,7 @@ func filterFileTypes(fileTypes ...string) pipelineSegment {
 	})
 }
 
+// uses dropbox api to download a file to a local folder
 func downloadToFolder(outputFolder string) pipelineSegment {
 	dbx := dropbox.New(dropbox.NewConfig(dropboxToken))
 
@@ -149,6 +151,7 @@ func downloadToFolder(outputFolder string) pipelineSegment {
 	})
 }
 
+// uses dropbox api to rename file in dropbox
 func markAsProcessed() pipelineSegment {
 	dbx := dropbox.New(dropbox.NewConfig(dropboxToken))
 
