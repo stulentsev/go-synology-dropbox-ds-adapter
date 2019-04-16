@@ -3,6 +3,8 @@ FROM alpine:latest as builder
 # Chosing a working directory
 WORKDIR /root
 
+RUN apk add --no-cache ca-certificates
+
 RUN apk update && \
     apk add libc6-compat git && \
     apk add --virtual .build-deps wget && \
@@ -29,11 +31,10 @@ FROM alpine:latest
 
 # Chosing a working directory
 WORKDIR /root
-
-
 # Setting environment variables for Go
 ENV PATH=${PATH}:/usr/local/go/bin GOROOT=/usr/local/go GOPATH=/root/go CGO_ENABLED=0
 
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /root/my/src/go-synology-dropbox-ds-adapter/go-synology-dropbox-ds-adapter .
 
 EXPOSE 80
