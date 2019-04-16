@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/tj/go-dropbox"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -16,16 +15,31 @@ type webhookPayload struct {
 }
 
 var (
-	errlog = log.New(os.Stderr, "ERR ", log.Ldate|log.Ltime|log.Lshortfile)
+	errlog  = log.New(os.Stderr, "ERR ", log.Ldate|log.Ltime|log.Lshortfile)
 	infolog = log.New(os.Stdout, "INFO ", log.Ldate|log.Ltime|log.Lshortfile)
+
+	dropboxToken = os.Getenv("DROPBOX_ACCESS_TOKEN")
 )
 
 func main() {
-	token := os.Getenv("DROPBOX_ACCESS_TOKEN")
-	if len(token) == 0 {
+	if len(dropboxToken) == 0 {
 		log.Fatal("Failed to fetch DROPBOX_ACCESS_TOKEN from ENV")
 	}
-	dbx := dropbox.New(dropbox.NewConfig(token))
+
+	outputFolder := os.Getenv("OUTPUT_FOLDER")
+	if len(outputFolder) == 0 {
+		log.Fatal("Failed to fetch OUTPUT_FOLDER from ENV")
+	}
+
+	in := startPipeline(
+		listFolder(),
+		filterFileTypes(".torrent", ".pdf"),
+		stopSeenEntries(),
+		downloadToFolder(outputFolder),
+		markAsProcessed(),
+	)
+	defer close(in) // probably redundant
+
 	http.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
 		if ch := r.URL.Query().Get("challenge"); len(ch) > 0 {
 			_, _ = w.Write([]byte(ch))
@@ -46,26 +60,11 @@ func main() {
 			return
 		}
 
-		output, err := dbx.Files.ListFolder(&dropbox.ListFolderInput{
-			Path: "/Synology DownloadStation adapter",
-		})
-		if err != nil {
-			errlog.Print(err)
-			w.WriteHeader(500)
-			return
+		for _, acc := range jsObj.ListFolder["accounts"] {
+			infolog.Printf("detected change for account %s", acc)
+			in <- acc
 		}
-		for _, entry := range output.Entries {
-			infolog.Printf("found new file %s\n", entry.PathLower)
-			content, err := dbx.Files.Download(&dropbox.DownloadInput{
-				Path: entry.PathLower,
-			})
-			if err != nil {
-				errlog.Print(err)
-				w.WriteHeader(500)
-				return
-			}
-			infolog.Printf("Downloaded %d bytes\n", content.Length)
-		}
+		w.WriteHeader(http.StatusOK)
 	})
 
 	port, ok := os.LookupEnv("PORT")

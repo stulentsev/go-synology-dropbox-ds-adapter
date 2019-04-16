@@ -1,3 +1,4 @@
 .idea
 go-synology-ds-adapter
-
+.envrc
+output
