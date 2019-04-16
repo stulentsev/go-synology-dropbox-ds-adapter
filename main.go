@@ -15,6 +15,11 @@ type webhookPayload struct {
 	ListFolder map[string][]string `json:"list_folder"`
 }
 
+var (
+	errlog = log.New(os.Stderr, "ERR ", log.Ldate|log.Ltime|log.Lshortfile)
+	infolog = log.New(os.Stdout, "INFO ", log.Ldate|log.Ltime|log.Lshortfile)
+)
+
 func main() {
 	token := os.Getenv("DROPBOX_ACCESS_TOKEN")
 	if len(token) == 0 {
@@ -29,48 +34,45 @@ func main() {
 
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			fmt.Println("ERR:", err)
+			errlog.Print(err)
 			w.WriteHeader(500)
 			return
 		}
 		jsObj := webhookPayload{}
 		err = json.Unmarshal(body, &jsObj)
 		if err != nil {
-			fmt.Println("ERR:", err)
+			errlog.Print(err)
 			w.WriteHeader(500)
 			return
 		}
 
-		fmt.Println(jsObj)
 		output, err := dbx.Files.ListFolder(&dropbox.ListFolderInput{
 			Path: "/Synology DownloadStation adapter",
 		})
 		if err != nil {
-			fmt.Println("ERR:", err)
+			errlog.Print(err)
 			w.WriteHeader(500)
 			return
 		}
 		for _, entry := range output.Entries {
-			fmt.Printf("found file %s\n", entry.PathLower)
+			infolog.Printf("found new file %s\n", entry.PathLower)
 			content, err := dbx.Files.Download(&dropbox.DownloadInput{
 				Path: entry.PathLower,
 			})
 			if err != nil {
-				fmt.Println("ERR:", err)
+				errlog.Print(err)
 				w.WriteHeader(500)
 				return
 			}
-			fmt.Printf("Downloaded %d bytes\n", content.Length)
+			infolog.Printf("Downloaded %d bytes\n", content.Length)
 		}
-	})
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = fmt.Fprintf(w, "Hello, you've requested: %s\n", r.URL.Path)
 	})
 
 	port, ok := os.LookupEnv("PORT")
 	if !ok {
 		port = "3000"
 	}
+	infolog.Printf("Starting web server on port %s", port)
 	err := http.ListenAndServe(fmt.Sprintf(":%s", port), nil)
 	if err != nil {
 		panic(err)
